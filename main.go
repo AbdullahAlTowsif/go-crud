@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 )
 
 type User struct {
@@ -34,6 +35,9 @@ func main() {
 	mux.HandleFunc("GET /health", healthHandler)
 	mux.HandleFunc("POST /user", createUsersHandler)
 	mux.HandleFunc("GET /users", getUsersHandler)
+	mux.HandleFunc("GET /user/{id}", getUserHandler)
+	mux.HandleFunc("PUT /user/{id}", updateUserHandler)
+	mux.HandleFunc("DELETE /user/{id}", deleteUserHandler)
 
 	fmt.Println("Server is running on port 5000")
 	err := http.ListenAndServe(":5000", mux)
@@ -75,4 +79,65 @@ func getUsersHandler(w http.ResponseWriter, r *http.Request) {
 
 	encoder := json.NewEncoder(w)
 	encoder.Encode(users)
+}
+
+func getUserHandler(w http.ResponseWriter, r *http.Request) {
+	idParam := r.PathValue("id")
+	id, err := strconv.Atoi(idParam)
+
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		fmt.Fprintln(w, "Invalid user id")
+		return
+	}
+
+	for _, user := range users {
+		if user.Id == id {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(user)
+			return
+		}
+	}
+
+	w.WriteHeader(http.StatusNotFound)
+	fmt.Fprintln(w, "User Not Found")
+}
+
+func updateUserHandler(w http.ResponseWriter, r *http.Request) {
+	idParam := r.PathValue("id")
+	id, err := strconv.Atoi(idParam)
+
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		fmt.Fprintln(w, "Invalid user id")
+		return
+	}
+
+	var updatedUser User
+
+	err = json.NewDecoder(r.Body).Decode(&updatedUser)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		fmt.Fprintln(w, "Invalid request body")
+		return
+	}
+
+	for idx, user := range users {
+		if user.Id == id {
+			updatedUser.Id = id
+			users[idx] = updatedUser
+
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(updatedUser)
+			return
+		}
+	}
+
+	w.WriteHeader(http.StatusNotFound)
+	fmt.Fprintln(w, "User Not Found")
+}
+
+
+func deleteUserHandler(w http.ResponseWriter, r *http.Request) {
+	//
 }
