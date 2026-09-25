@@ -1,10 +1,14 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"slices"
 	"strconv"
+
+	"github.com/jackc/pgx/v5"
 )
 
 type User struct {
@@ -29,7 +33,23 @@ var users = []User{
 	},
 }
 
+var db *pgx.Conn
+
+func connectDb() {
+	var err error
+	connStr := "postgres://postgres:towsifsql@localhost:5432/gocrud_db"
+
+	db, err = pgx.Connect(context.Background(), connStr)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println("Database Connected Successfully!")
+}
+
 func main() {
+	connectDb()
+	defer db.Close(context.Background())
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /", rootHandler)
 	mux.HandleFunc("GET /health", healthHandler)
@@ -64,8 +84,20 @@ func createUsersHandler(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintln(w, "Invalid request body")
 		return
 	}
-	newUser.Id = len(users) + 1
-	users = append(users, newUser)
+	// newUser.Id = len(users) + 1
+	// users = append(users, newUser)
+
+	query := `
+		insert into users (name, age, email)
+		values ($1, $2, $3)
+		returning id
+	`
+	err = db.QueryRow(context.Background(), query, newUser.Name, newUser.Age, newUser.Email).Scan(&newUser.Id)
+
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		fmt.Fprintln(w, "Could not create user!")
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
@@ -73,6 +105,40 @@ func createUsersHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func getUsersHandler(w http.ResponseWriter, r *http.Request) {
+	query := `
+		select id, name, age, email from users
+	`
+
+	rows, err := db.Query(context.Background(), query)
+
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		fmt.Fprintln(w, "Could not get users")
+		return
+	}
+	defer rows.Close()
+
+	var users []User
+	for rows.Next() {
+		var user User
+		err := rows.Scan(&user.Id, &user.Name, &user.Age, &user.Email)
+
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			fmt.Fprintln(w, "Could not get users")
+			return
+		}
+
+		users = append(users, user)
+	}
+
+	err = rows.Err()
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		fmt.Fprintln(w, "Could not read users")
+		return
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	// users, _ := json.Marshal(users) // converts the data into json after saving into the memory
 	// w.Write(users)
@@ -137,7 +203,26 @@ func updateUserHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintln(w, "User Not Found")
 }
 
-
 func deleteUserHandler(w http.ResponseWriter, r *http.Request) {
-	//
+	idParam := r.PathValue("id")
+	id, err := strconv.Atoi(idParam)
+
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		fmt.Fprintln(w, "Invalid user id")
+		return
+	}
+
+	for idx, user := range users {
+		if user.Id == id {
+			// users = append(users[:idx], users[idx+1:]...)
+			users = slices.Delete(users, idx, idx+1)
+
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+	}
+
+	w.WriteHeader(http.StatusNotFound)
+	fmt.Fprintln(w, "User Not Found")
 }
