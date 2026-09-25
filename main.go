@@ -188,19 +188,29 @@ func updateUserHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	for idx, user := range users {
-		if user.Id == id {
-			updatedUser.Id = id
-			users[idx] = updatedUser
+	query := `
+		update users
+		set name = $1, age = $2, email = $3
+		where id = $4
+		returning id, name, age, email
+	`
 
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(updatedUser)
-			return
-		}
+	err = db.QueryRow(context.Background(), query, updatedUser.Name, updatedUser.Age, updatedUser.Email, id).Scan(&updatedUser.Id, &updatedUser.Name, &updatedUser.Age, &updatedUser.Email)
+
+	if err == pgx.ErrNoRows {
+		w.WriteHeader(http.StatusNotFound)
+		fmt.Fprintln(w, "User Not Found")
+		return
 	}
 
-	w.WriteHeader(http.StatusNotFound)
-	fmt.Fprintln(w, "User Not Found")
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		fmt.Fprintln(w, "Could not update user")
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(updatedUser)
 }
 
 func deleteUserHandler(w http.ResponseWriter, r *http.Request) {
