@@ -5,10 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"slices"
 	"strconv"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 type User struct {
@@ -157,16 +157,30 @@ func getUserHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	for _, user := range users {
-		if user.Id == id {
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(user)
-			return
-		}
+	var user User
+
+	query := `
+		select id, name, age, email from users where id = $1
+	`
+
+	err = db.QueryRow(context.Background(), query, id).Scan(&user.Id, &user.Name, &user.Age, &user.Email)
+
+	if err == pgx.ErrNoRows {
+		w.WriteHeader(http.StatusNotFound)
+		fmt.Fprintln(w, "User Not Found")
+		return
 	}
 
-	w.WriteHeader(http.StatusNotFound)
-	fmt.Fprintln(w, "User Not Found")
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		fmt.Fprintln(w, "Could not get users")
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+
+	encoder := json.NewEncoder(w)
+	encoder.Encode(user)
 }
 
 func updateUserHandler(w http.ResponseWriter, r *http.Request) {
@@ -223,16 +237,26 @@ func deleteUserHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	for idx, user := range users {
-		if user.Id == id {
-			// users = append(users[:idx], users[idx+1:]...)
-			users = slices.Delete(users, idx, idx+1)
+	query := `
+		delete from users
+		where id = $1
+	`
 
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
+	var cmdTag pgconn.CommandTag
+
+	cmdTag, err = db.Exec(context.Background(), query, id)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		fmt.Fprintln(w, "Could not delete user")
+		return
 	}
 
-	w.WriteHeader(http.StatusNotFound)
-	fmt.Fprintln(w, "User Not Found")
+	if cmdTag.RowsAffected() != 1 {
+		w.WriteHeader(http.StatusNotFound)
+		fmt.Fprintln(w, "User Not Found")
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+	fmt.Fprintln(w, "User Deleted Successfully!")
 }
