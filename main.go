@@ -4,11 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
+	"os"
 	"strconv"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/joho/godotenv"
 )
 
 type User struct {
@@ -37,7 +40,7 @@ var db *pgx.Conn
 
 func connectDb() {
 	var err error
-	connStr := "postgres://postgres:towsifsql@localhost:5432/gocrud_db"
+	connStr := os.Getenv("DB_URL")
 
 	db, err = pgx.Connect(context.Background(), connStr)
 	if err != nil {
@@ -47,6 +50,13 @@ func connectDb() {
 }
 
 func main() {
+	var err error
+
+	err = godotenv.Load()
+	if err != nil {
+		log.Fatal("Error loading .env file")
+	}
+
 	connectDb()
 	defer db.Close(context.Background())
 
@@ -60,7 +70,7 @@ func main() {
 	mux.HandleFunc("DELETE /user/{id}", deleteUserHandler)
 
 	fmt.Println("Server is running on port 5000")
-	err := http.ListenAndServe(":5000", mux)
+	err = http.ListenAndServe(":5000", mux)
 
 	if err != nil {
 		fmt.Println("Server error:", err)
